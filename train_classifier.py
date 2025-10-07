@@ -26,7 +26,7 @@ LABELS_ZH = {
     "pH_high": "pH 太高",
     "DO_low": "溶氧不足",
     "Temp_high": "水溫過高",
-    "normal": "狀態正常",
+    "normal": "酸鹼/溶氧/水溫正常",
 }
 
 LABELS_EN = {
@@ -34,7 +34,7 @@ LABELS_EN = {
     "pH_high": "pH High",
     "DO_low": "Dissolved Oxygen Low",
     "Temp_high": "Temperature High",
-    "normal": "Normal",
+    "normal": "Conditions Normal (pH/DO/Temp OK)",
 }
 
 LABELS_DISPLAY = {k: f"{LABELS_EN[k]} ({LABELS_ZH[k]})" for k in LABELS_ZH}

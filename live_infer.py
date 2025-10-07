@@ -26,7 +26,7 @@ LEGEND = {
     "pH_high": "pH High (酸鹼值過高)",
     "DO_low": "Dissolved Oxygen Low (溶氧不足)",
     "Temp_high": "Temperature High (水溫過高)",
-    "normal": "Within Thresholds (各項數值正常)",
+    "normal": "Conditions Normal (酸鹼/溶氧/水溫正常)",
 }
 
 TOPIC_SUFFIX_MAP = {
