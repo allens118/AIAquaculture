@@ -46,7 +46,7 @@ SPLIT_LABELS = {
     3: "3rd Train Split\n第3折訓練",
 }
 
-SMOOTH_ALPHA = 0.35  # smoothing strength for curves
+SMOOTH_ALPHA = 0.0  # smoothing strength for curves
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
