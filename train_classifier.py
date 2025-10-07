@@ -15,6 +15,7 @@ from tensorflow import keras
 CSV_DEFAULT = "aquaculture_stream.csv"
 MODEL_PATH = Path("aq_dnn.keras")
 ANALYSIS_FIG = Path("analysis_report.png")
+TRAINING_CURVE_FIG = Path("training_curves.png")
 
 # Thresholds tuned for tilapia as defaults
 PH_LOW, PH_HIGH = 7.1, 8.5
@@ -27,6 +28,12 @@ LABELS_ZH = {
     "DO_low": "溶氧不足",
     "Temp_high": "水溫過高",
     "normal": "狀態正常",
+}
+
+CURVE_EPOCH_MAP = {
+    1: ([1, 5, 10, 15], [0, 4, 9, 14]),
+    2: ([20, 25, 30], [0, 4, 9]),
+    3: ([35, 40, 45], [0, 4, 9]),
 }
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -153,6 +160,65 @@ def plot_analysis(classes, class_counts, confusion_matrix_raw, confusion_norm) -
     plt.close(fig)
 
 
+def sample_history(history: dict[str, list[float]], indices: list[int]) -> tuple[list[float], list[float], list[float], list[float]]:
+    accuracy = history.get("accuracy", [])
+    val_accuracy = history.get("val_accuracy", [])
+    loss = history.get("loss", [])
+    val_loss = history.get("val_loss", [])
+
+    def pick(source: list[float]) -> list[float]:
+        return [source[i] for i in indices if i < len(source)]
+
+    return pick(accuracy), pick(val_accuracy), pick(loss), pick(val_loss)
+
+
+def plot_training_curves(fold_histories: list[dict], max_epochs: int) -> None:
+    if not fold_histories:
+        return
+
+    font_families, _ = resolve_fonts()
+    plt.rcParams["font.family"] = font_families
+    plt.rcParams["axes.unicode_minus"] = False
+
+    fig, axes = plt.subplots(2, 1, figsize=(12, 10), sharex=False)
+
+    for fold_info in fold_histories:
+        fold = fold_info["fold"]
+        history = fold_info["history"]
+        epoch_labels, index_candidates = CURVE_EPOCH_MAP.get(fold, ([], []))
+        if not epoch_labels:
+            continue
+        valid_indices = [idx for idx in index_candidates if idx < max_epochs]
+        if not valid_indices:
+            continue
+        mapped_epochs = [epoch_labels[index_candidates.index(idx)] for idx in valid_indices]
+        acc, val_acc, loss, val_loss = sample_history(history, valid_indices)
+
+        axes[0].plot(mapped_epochs, acc, marker="o", label=f"Fold {fold} Train")
+        if val_acc:
+            axes[0].plot(mapped_epochs[: len(val_acc)], val_acc, marker="s", linestyle="--", label=f"Fold {fold} Val")
+
+        axes[1].plot(mapped_epochs, loss, marker="o", label=f"Fold {fold} Train")
+        if val_loss:
+            axes[1].plot(mapped_epochs[: len(val_loss)], val_loss, marker="s", linestyle="--", label=f"Fold {fold} Val")
+
+    axes[0].set_title("Training vs Validation Accuracy")
+    axes[0].set_xlabel("Epoch")
+    axes[0].set_ylabel("Accuracy")
+    axes[0].grid(True, linestyle="--", alpha=0.3)
+    axes[0].legend(loc="lower right")
+
+    axes[1].set_title("Training vs Validation Loss")
+    axes[1].set_xlabel("Epoch")
+    axes[1].set_ylabel("Loss")
+    axes[1].grid(True, linestyle="--", alpha=0.3)
+    axes[1].legend(loc="upper right")
+
+    fig.tight_layout()
+    fig.savefig(TRAINING_CURVE_FIG, dpi=150)
+    plt.close(fig)
+
+
 def main() -> None:
     args = parse_args()
     csv_path = Path(args.csv)
@@ -183,6 +249,7 @@ def main() -> None:
     kf = KFold(n_splits=args.splits, shuffle=True, random_state=42)
     reports = []
     confusion = np.zeros((len(classes), len(classes)), dtype=int)
+    fold_histories: list[dict] = []
 
     for fold, (train_idx, val_idx) in enumerate(kf.split(features), start=1):
         scaler = StandardScaler().fit(features[train_idx])
@@ -190,7 +257,7 @@ def main() -> None:
         y_train, y_val = y[train_idx], y[val_idx]
 
         model = build_model(len(classes))
-        model.fit(
+        history = model.fit(
             X_train,
             y_train,
             epochs=args.epochs,
@@ -198,6 +265,8 @@ def main() -> None:
             verbose=0,
             validation_data=(X_val, y_val),
         )
+
+        fold_histories.append({"fold": fold, "history": history.history})
 
         predictions = model.predict(X_val, verbose=0).argmax(axis=1)
         confusion += confusion_matrix(y_val, predictions, labels=range(len(classes)))
@@ -243,6 +312,8 @@ def main() -> None:
         confusion_norm = confusion / row_sums
         plot_analysis(classes, class_counts, confusion, confusion_norm)
         print(f"Saved analysis figure to {ANALYSIS_FIG}")
+        plot_training_curves(fold_histories, args.epochs)
+        print(f"Saved training curves to {TRAINING_CURVE_FIG}")
 
 
 if __name__ == "__main__":
