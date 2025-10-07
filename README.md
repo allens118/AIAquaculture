@@ -55,7 +55,7 @@
    python train_classifier.py --epochs 20 --splits 3
    ```
    - 預設門檻：`pH < 7.1`、`pH > 8.5`、`溶氧 < 7.64`、`溫度 > 26.3`。
-   - 生成 `aq_dnn.keras`、`aq_meta.pkl`，並輸出 `analysis_report.png`（標籤分佈 + 混淆矩陣）與 `training_curves.png`（各分割的 Train/Val Accuracy、Loss 曲線）。
+   - 生成 `aq_dnn.keras`、`aq_meta.pkl`，並輸出 `analysis_report.png`（標籤分佈 + 混淆矩陣）、`training_curves.png`（連續的 Train/Val Accuracy、Loss 歷程）、`fold_comparison.png`（各折對照）。
    - 可透過參數調整門檻或摺數，例如 `--ph-low 6.8 --temp-high 27`。
 
 4. **即時推論 (Live Inference)**
@@ -126,3 +126,4 @@
 ## License
 
 若無特別聲明，預設採用專案擁有者的授權。請依實際需求更新 License。 
+\n## 訓練可視化補充\n- `fold_comparison.png`：同時呈現三個 K-fold 的訓練/驗證準確率與損失曲線，方便並排比較（同圖不同顏色）。\n

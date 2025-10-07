@@ -16,6 +16,7 @@ CSV_DEFAULT = "aquaculture_stream.csv"
 MODEL_PATH = Path("aq_dnn.keras")
 ANALYSIS_FIG = Path("analysis_report.png")
 TRAINING_CURVE_FIG = Path("training_curves.png")
+FOLD_COMPARISON_FIG = Path("fold_comparison.png")
 
 PH_LOW, PH_HIGH = 7.1, 8.5
 DO_LOW = 7.64
@@ -282,6 +283,49 @@ def plot_training_curves(fold_histories: list[dict], fold_ranges: dict[int, tupl
     plt.close(fig)
 
 
+
+def plot_fold_comparison(fold_histories: list[dict], fold_ranges: dict[int, tuple[int, int]]) -> None:
+    if not fold_histories:
+        return
+
+    font_families, _ = resolve_fonts()
+    plt.rcParams["font.family"] = font_families
+    plt.rcParams["axes.unicode_minus"] = False
+
+    colors = ["#3f74e3", "#f05d5e", "#16c79a"]
+    fig, axes = plt.subplots(2, 1, figsize=(12, 10), sharex=True)
+
+    for idx, fold_info in enumerate(fold_histories):
+        fold = fold_info["fold"]
+        history = fold_info["history"]
+        start, _ = fold_ranges[fold]
+        epochs = expand_epochs(start, len(history.get("accuracy", [])))
+        color = colors[idx % len(colors)]
+
+        axes[0].plot(epochs, history.get("accuracy", []), color=color, linewidth=1.8, label=f"Fold {fold} Train")
+        if "val_accuracy" in history:
+            axes[0].plot(epochs, history["val_accuracy"], color=color, linestyle="--", linewidth=1.4, label=f"Fold {fold} Val")
+
+        axes[1].plot(epochs, history.get("loss", []), color=color, linewidth=1.8, label=f"Fold {fold} Train")
+        if "val_loss" in history:
+            axes[1].plot(epochs, history["val_loss"], color=color, linestyle="--", linewidth=1.4, label=f"Fold {fold} Val")
+
+    axes[0].set_ylabel("Accuracy / 準確率")
+    axes[0].set_title("Per-Fold Accuracy Comparison / 各折準確率比較")
+    axes[0].grid(True, linestyle="--", alpha=0.3)
+    axes[0].legend(loc="lower right")
+
+    axes[1].set_xlabel("Epoch / 訓練輪次")
+    axes[1].set_ylabel("Loss / 損失")
+    axes[1].set_title("Per-Fold Loss Comparison / 各折損失比較")
+    axes[1].grid(True, linestyle="--", alpha=0.3)
+    axes[1].legend(loc="upper right")
+
+    fig.tight_layout()
+    fig.savefig(FOLD_COMPARISON_FIG, dpi=150)
+    plt.close(fig)
+
+
 def main() -> None:
     args = parse_args()
     csv_path = Path(args.csv)
@@ -382,6 +426,8 @@ def main() -> None:
             {"accuracy": prod_acc, "loss": prod_loss},
         )
         print(f"Saved training curves to {TRAINING_CURVE_FIG}")
+        plot_fold_comparison(fold_histories, fold_ranges)
+        print(f"Saved fold comparison to {FOLD_COMPARISON_FIG}")
 
 
 if __name__ == "__main__":
