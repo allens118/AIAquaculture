@@ -46,6 +46,8 @@ SPLIT_LABELS = {
     3: "3rd Train Split\n第3折訓練",
 }
 
+SMOOTH_ALPHA = 0.35  # smoothing strength for curves
+
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 if hasattr(sys.stderr, "reconfigure"):
@@ -162,11 +164,20 @@ def plot_analysis(classes, class_counts, confusion_matrix_raw, confusion_norm) -
     plt.close(fig)
 
 
-def expand_epochs(fold_ranges, history_len):
-    start, end = fold_ranges
+def expand_epochs(start: int, history_len: int) -> np.ndarray:
     if history_len <= 1:
         return np.array([float(start)])
-    return np.linspace(start, end, history_len, endpoint=True)
+    stop = start + history_len - 1
+    return np.linspace(start, stop, history_len, endpoint=True)
+
+
+def smooth_curve(values: list[float], alpha: float = SMOOTH_ALPHA) -> list[float]:
+    if not values:
+        return []
+    smoothed = [values[0]]
+    for v in values[1:]:
+        smoothed.append(smoothed[-1] * alpha + v * (1 - alpha))
+    return smoothed
 
 
 def plot_training_curves(fold_histories: list[dict], fold_ranges: dict[int, tuple[int, int]], production_metrics: dict[str, float]) -> None:
@@ -187,20 +198,22 @@ def plot_training_curves(fold_histories: list[dict], fold_ranges: dict[int, tupl
         for axis in axes:
             axis.axvspan(start, end, color="#cbe8ff", alpha=alpha)
 
-    train_acc_x: list[float] = []
-    train_acc_y: list[float] = []
-    val_acc_x: list[float] = []
-    val_acc_y: list[float] = []
-    train_loss_x: list[float] = []
-    train_loss_y: list[float] = []
-    val_loss_x: list[float] = []
-    val_loss_y: list[float] = []
+    train_acc_x = []
+    train_acc_y = []
+    val_acc_x = []
+    val_acc_y = []
+    train_loss_x = []
+    train_loss_y = []
+    val_loss_x = []
+    val_loss_y = []
 
+    cumulative_start = min_epoch
     for fold_info in fold_histories:
         fold = fold_info["fold"]
         history = fold_info["history"]
-        rng = fold_ranges[fold]
-        epochs = expand_epochs(rng, len(history.get("accuracy", [])))
+        length = len(history.get("accuracy", []))
+        epochs = expand_epochs(cumulative_start, length)
+        cumulative_start += length
 
         train_acc_x.extend(epochs)
         train_acc_y.extend(history.get("accuracy", []))
@@ -214,13 +227,24 @@ def plot_training_curves(fold_histories: list[dict], fold_ranges: dict[int, tupl
             val_loss_x.extend(epochs)
             val_loss_y.extend(history["val_loss"])
 
-    axes[0].plot(train_acc_x, train_acc_y, color="#3f74e3", linewidth=1.7, marker="o", label="Train Accuracy / 訓練")
-    if val_acc_x:
-        axes[0].plot(val_acc_x, val_acc_y, color="#f05d5e", linewidth=1.7, linestyle="--", marker="s", label="Validation Accuracy / 驗證")
+    train_acc_s = smooth_curve(train_acc_y)
+    val_acc_s = smooth_curve(val_acc_y)
+    train_loss_s = smooth_curve(train_loss_y)
+    val_loss_s = smooth_curve(val_loss_y)
 
-    axes[1].plot(train_loss_x, train_loss_y, color="#3f74e3", linewidth=1.7, marker="o", label="Train Loss / 訓練")
+    axes[0].plot(train_acc_x, train_acc_s, color="#3f74e3", linewidth=2.0, label="Train Accuracy / 訓練")
+    if val_acc_x:
+        axes[0].plot(val_acc_x, val_acc_s, color="#f05d5e", linewidth=2.0, linestyle="--", label="Validation Accuracy / 驗證")
+    axes[0].scatter(train_acc_x, train_acc_y, color="#3f74e3", alpha=0.2, s=20)
+    if val_acc_x:
+        axes[0].scatter(val_acc_x, val_acc_y, color="#f05d5e", alpha=0.2, s=20)
+
+    axes[1].plot(train_loss_x, train_loss_s, color="#3f74e3", linewidth=2.0, label="Train Loss / 訓練")
     if val_loss_x:
-        axes[1].plot(val_loss_x, val_loss_y, color="#f05d5e", linewidth=1.7, linestyle="--", marker="s", label="Validation Loss / 驗證")
+        axes[1].plot(val_loss_x, val_loss_s, color="#f05d5e", linewidth=2.0, linestyle="--", label="Validation Loss / 驗證")
+    axes[1].scatter(train_loss_x, train_loss_y, color="#3f74e3", alpha=0.2, s=20)
+    if val_loss_x:
+        axes[1].scatter(val_loss_x, val_loss_y, color="#f05d5e", alpha=0.2, s=20)
 
     test_epoch = max_epoch + 2
     axes[0].bar([test_epoch], [production_metrics.get("accuracy", np.nan)], width=1.5, color="#16c79a", label="Full-set Accuracy / 完整資料")
@@ -230,20 +254,22 @@ def plot_training_curves(fold_histories: list[dict], fold_ranges: dict[int, tupl
     axes[0].set_title("Train vs Validation Accuracy / 訓練與驗證準確率")
     axes[0].grid(True, linestyle="--", alpha=0.3)
     axes[0].set_xlim(min_epoch, test_epoch + 3)
-    axes[0].set_ylim(0, 1.05)
+    axes[0].set_ylim(0, 1.02)
     axes[0].legend(loc="lower right")
 
     axes[1].set_xlabel("Epoch / 訓練輪次")
     axes[1].set_ylabel("Loss / 損失")
     axes[1].set_title("Train vs Validation Loss / 訓練與驗證損失")
     axes[1].grid(True, linestyle="--", alpha=0.3)
+    loss_max = max(max(train_loss_s or [0]), max(val_loss_s or [0]), production_metrics.get("loss", 0))
     axes[1].set_xlim(min_epoch, test_epoch + 3)
+    axes[1].set_ylim(0, max(loss_max * 1.1, 0.05))
     axes[1].legend(loc="upper right")
 
     acc_ylim = axes[0].get_ylim()
     loss_ylim = axes[1].get_ylim()
     acc_y = acc_ylim[1] - (acc_ylim[1] - acc_ylim[0]) * 0.05
-    loss_y = loss_ylim[1] - (loss_ylim[1] - loss_ylim[0]) * 0.05
+    loss_y = loss_ylim[1] - (loss_ylim[1] - loss_ylim[0]) * 0.08
 
     for fold, (start, end) in fold_ranges.items():
         midpoint = (start + end) / 2
@@ -266,11 +292,7 @@ def main() -> None:
     if df.empty:
         raise ValueError("Dataset is empty after dropping NaNs")
 
-    df["label"] = df.apply(
-        auto_label,
-        axis=1,
-        args=(args.ph_low, args.ph_high, args.do_low, args.temp_high),
-    )
+    df["label"] = df.apply(auto_label, axis=1, args=(args.ph_low, args.ph_high, args.do_low, args.temp_high))
 
     features = df[["ph", "o2", "temp"]].astype("float32").values
     labels = df["label"].values
@@ -286,7 +308,7 @@ def main() -> None:
     confusion = np.zeros((len(classes), len(classes)), dtype=int)
     fold_histories: list[dict] = []
     fold_ranges: dict[int, tuple[int, int]] = {}
-    cumulative_epoch = 1
+    cumulative_start = 1
 
     for fold, (train_idx, val_idx) in enumerate(kf.split(features), start=1):
         scaler = StandardScaler().fit(features[train_idx])
@@ -303,11 +325,9 @@ def main() -> None:
             validation_data=(X_val, y_val),
         )
 
-        history_length = len(history.history.get("accuracy", []))
-        start_epoch = cumulative_epoch
-        end_epoch = start_epoch + history_length - 1
-        fold_ranges[fold] = (start_epoch, end_epoch)
-        cumulative_epoch = end_epoch + 1
+        length = len(history.history.get("accuracy", []))
+        fold_ranges[fold] = (cumulative_start, cumulative_start + length - 1)
+        cumulative_start += length
 
         fold_histories.append({"fold": fold, "history": history.history})
 
@@ -356,7 +376,11 @@ def main() -> None:
         confusion_norm = confusion / row_sums
         plot_analysis(classes, class_counts, confusion, confusion_norm)
         print(f"Saved analysis figure to {ANALYSIS_FIG}")
-        plot_training_curves(fold_histories, fold_ranges, {"accuracy": prod_acc, "loss": prod_loss})
+        plot_training_curves(
+            fold_histories,
+            fold_ranges,
+            {"accuracy": prod_acc, "loss": prod_loss},
+        )
         print(f"Saved training curves to {TRAINING_CURVE_FIG}")
 
 
