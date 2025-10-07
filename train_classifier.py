@@ -30,11 +30,29 @@ LABELS_ZH = {
     "normal": "狀態正常",
 }
 
-# Target epoch ranges for each fold to create a continuous timeline
+LABELS_EN = {
+    "pH_low": "pH Low",
+    "pH_high": "pH High",
+    "DO_low": "Dissolved Oxygen Low",
+    "Temp_high": "Temperature High",
+    "normal": "Normal",
+}
+
+# Bilingual label presentation
+LABELS_DISPLAY = {key: f"{LABELS_EN[key]} ({LABELS_ZH[key]})" for key in LABELS_ZH}
+LABELS_MULTILINE = {key: f"{LABELS_EN[key]}\n{LABELS_ZH[key]}" for key in LABELS_ZH}
+
+# Predefined epoch ranges to form a continuous x-axis per fold
 EPOCH_RANGES = {
     1: (1, 15),
     2: (20, 30),
     3: (35, 45),
+}
+
+SPLIT_LABELS = {
+    1: "1st Train Split\n第1折訓練",
+    2: "2nd Train Split\n第2折訓練",
+    3: "3rd Train Split\n第3折訓練",
 }
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -99,7 +117,7 @@ def resolve_fonts() -> tuple[list[str], bool]:
         "Noto Sans CJK TC",
         "Arial Unicode MS",
     ]
-    available = []
+    available: list[str] = []
     for family in candidates:
         try:
             font_manager.findfont(family, fallback_to_default=False)
@@ -119,26 +137,26 @@ def plot_analysis(classes, class_counts, confusion_matrix_raw, confusion_norm) -
     fig, axes = plt.subplots(1, 2, figsize=(12, 5))
 
     if support_chinese:
-        xtick_labels = [f"{cls}\n{LABELS_ZH.get(cls, cls)}" for cls in classes]
-        axis_labels = [LABELS_ZH.get(cls, cls) for cls in classes]
+        xtick_labels = [LABELS_MULTILINE.get(cls, cls) for cls in classes]
+        axis_labels = xtick_labels
     else:
-        xtick_labels = classes
-        axis_labels = classes
+        xtick_labels = [LABELS_DISPLAY.get(cls, cls) for cls in classes]
+        axis_labels = xtick_labels
 
     axes[0].bar(range(len(classes)), class_counts, color="#3f74e3")
     axes[0].set_xticks(range(len(classes)))
     axes[0].set_xticklabels(xtick_labels, rotation=20, ha="right")
-    axes[0].set_ylabel("Samples")
-    axes[0].set_title("Label Distribution")
+    axes[0].set_ylabel("Samples / 筆數")
+    axes[0].set_title("Label Distribution / 標籤分佈")
 
     im = axes[1].imshow(confusion_norm, cmap="Blues", vmin=0, vmax=1)
     axes[1].set_xticks(range(len(classes)))
     axes[1].set_xticklabels(axis_labels, rotation=20, ha="right")
     axes[1].set_yticks(range(len(classes)))
     axes[1].set_yticklabels(axis_labels)
-    axes[1].set_title("Confusion Matrix (Recall)")
-    axes[1].set_xlabel("Predicted")
-    axes[1].set_ylabel("Actual")
+    axes[1].set_title("Confusion Matrix (Recall) / 混淆矩陣")
+    axes[1].set_xlabel("Predicted / 預測")
+    axes[1].set_ylabel("Actual / 實際")
 
     for i in range(len(classes)):
         for j in range(len(classes)):
@@ -153,9 +171,9 @@ def plot_analysis(classes, class_counts, confusion_matrix_raw, confusion_norm) -
             )
 
     cbar = fig.colorbar(im, ax=axes[1], fraction=0.046, pad=0.04)
-    cbar.set_label("Recall")
+    cbar.set_label("Recall / 召回率")
 
-    fig.suptitle("Aquaculture Telemetry Analysis", fontsize=14, fontweight="bold")
+    fig.suptitle("Aquaculture Telemetry Analysis / 水產養殖遙測分析", fontsize=14, fontweight="bold")
     fig.tight_layout(rect=[0, 0, 1, 0.95])
     fig.savefig(ANALYSIS_FIG, dpi=150)
     plt.close(fig)
@@ -163,9 +181,9 @@ def plot_analysis(classes, class_counts, confusion_matrix_raw, confusion_norm) -
 
 def linspace_epochs(fold: int, length: int) -> np.ndarray:
     start, end = EPOCH_RANGES.get(fold, (1, length))
-    if length == 1:
-        return np.array([start])
-    return np.linspace(start, end, num=length)
+    if length <= 1:
+        return np.array([start], dtype=float)
+    return np.linspace(start, end, num=length, endpoint=True)
 
 
 def plot_training_curves(fold_histories: list[dict], production_metrics: dict[str, float]) -> None:
@@ -177,47 +195,77 @@ def plot_training_curves(fold_histories: list[dict], production_metrics: dict[st
     plt.rcParams["axes.unicode_minus"] = False
 
     fig, axes = plt.subplots(2, 1, figsize=(14, 10), sharex=True)
+    min_epoch = min(rng[0] for rng in EPOCH_RANGES.values())
+    max_epoch = max(rng[1] for rng in EPOCH_RANGES.values())
 
-    max_epoch = max(end for end in (rng[1] for rng in EPOCH_RANGES.values()))
+    shades = [0.22, 0.12, 0.22]
+    for idx, (fold, (start, end)) in enumerate(EPOCH_RANGES.items(), start=1):
+        color = "#cbe8ff"
+        for axis in axes:
+            alpha = shades[(idx - 1) % len(shades)]
+            axis.axvspan(start, end, color=color, alpha=alpha, linewidth=0)
 
-    for axis in axes:
-        axis.axvspan(*EPOCH_RANGES[1], color="#cbe8ff", alpha=0.3)
-        axis.axvspan(*EPOCH_RANGES[2], color="#cbe8ff", alpha=0.2)
-        axis.axvspan(*EPOCH_RANGES[3], color="#cbe8ff", alpha=0.3)
-
-    axes[0].text(8, axes[0].get_ylim()[1] * 0.95, "1st train split", ha="center", va="top", fontsize=11)
-    axes[0].text(25, axes[0].get_ylim()[1] * 0.95, "2nd train split", ha="center", va="top", fontsize=11)
-    axes[0].text(40, axes[0].get_ylim()[1] * 0.95, "3rd train split", ha="center", va="top", fontsize=11)
+    train_acc_x: list[float] = []
+    train_acc_y: list[float] = []
+    val_acc_x: list[float] = []
+    val_acc_y: list[float] = []
+    train_loss_x: list[float] = []
+    train_loss_y: list[float] = []
+    val_loss_x: list[float] = []
+    val_loss_y: list[float] = []
 
     for fold_info in fold_histories:
         fold = fold_info["fold"]
         history = fold_info["history"]
-        epochs = linspace_epochs(fold, len(history["accuracy"]))
+        epochs = linspace_epochs(fold, len(history.get("accuracy", [])))
 
-        axes[0].plot(epochs, history["accuracy"], color="#3f74e3", label=f"Fold {fold} Train" if fold == 1 else None)
+        train_acc_x.extend(epochs)
+        train_acc_y.extend(history.get("accuracy", []))
+        train_loss_x.extend(epochs)
+        train_loss_y.extend(history.get("loss", []))
+
         if "val_accuracy" in history:
-            axes[0].plot(epochs, history["val_accuracy"], color="#f05d5e", linestyle="--", label=f"Fold {fold} Val" if fold == 1 else None)
-
-        axes[1].plot(epochs, history["loss"], color="#3f74e3", label=f"Fold {fold} Train" if fold == 1 else None)
+            val_acc_x.extend(epochs)
+            val_acc_y.extend(history["val_accuracy"])
         if "val_loss" in history:
-            axes[1].plot(epochs, history["val_loss"], color="#f05d5e", linestyle="--", label=f"Fold {fold} Val" if fold == 1 else None)
+            val_loss_x.extend(epochs)
+            val_loss_y.extend(history["val_loss"])
 
-    test_epochs = [max_epoch + 1.5]
-    axes[0].bar(test_epochs, [production_metrics.get("accuracy")], width=1.2, color="#16c79a", label="Full-set accuracy")
-    axes[1].bar(test_epochs, [production_metrics.get("loss")], width=1.2, color="#16c79a", label="Full-set loss")
+    axes[0].plot(train_acc_x, train_acc_y, color="#3f74e3", linewidth=1.6, marker="o", label="Train Accuracy / 訓練")
+    if val_acc_x:
+        axes[0].plot(val_acc_x, val_acc_y, color="#f05d5e", linewidth=1.6, linestyle="--", marker="s", label="Validation Accuracy / 驗證")
 
-    axes[0].set_ylabel("Accuracy")
-    axes[0].set_title("Train vs Validation Accuracy (per fold)")
+    axes[1].plot(train_loss_x, train_loss_y, color="#3f74e3", linewidth=1.6, marker="o", label="Train Loss / 訓練")
+    if val_loss_x:
+        axes[1].plot(val_loss_x, val_loss_y, color="#f05d5e", linewidth=1.6, linestyle="--", marker="s", label="Validation Loss / 驗證")
+
+    test_epoch = max_epoch + 2
+    axes[0].bar([test_epoch], [production_metrics.get("accuracy", np.nan)], width=1.5, color="#16c79a", label="Full-set Accuracy / 完整資料")
+    axes[1].bar([test_epoch], [production_metrics.get("loss", np.nan)], width=1.5, color="#16c79a", label="Full-set Loss / 完整資料")
+
+    axes[0].set_ylabel("Accuracy / 準確率")
+    axes[0].set_title("Train vs Validation Accuracy / 訓練與驗證準確率")
     axes[0].grid(True, linestyle="--", alpha=0.3)
-    axes[0].set_xlim(1, max_epoch + 5)
+    axes[0].set_xlim(min_epoch, test_epoch + 3)
     axes[0].legend(loc="lower right")
 
-    axes[1].set_xlabel("Epoch")
-    axes[1].set_ylabel("Loss")
-    axes[1].set_title("Train vs Validation Loss (per fold)")
+    axes[1].set_xlabel("Epoch / 訓練輪次")
+    axes[1].set_ylabel("Loss / 損失")
+    axes[1].set_title("Train vs Validation Loss / 訓練與驗證損失")
     axes[1].grid(True, linestyle="--", alpha=0.3)
-    axes[1].set_xlim(1, max_epoch + 5)
+    axes[1].set_xlim(min_epoch, test_epoch + 3)
     axes[1].legend(loc="upper right")
+
+    # Add split labels after plotting so we know the axis limits
+    acc_ylim = axes[0].get_ylim()
+    loss_ylim = axes[1].get_ylim()
+    acc_y = acc_ylim[1] - (acc_ylim[1] - acc_ylim[0]) * 0.05
+    loss_y = loss_ylim[1] - (loss_ylim[1] - loss_ylim[0]) * 0.05
+    for idx, (fold, (start, end)) in enumerate(EPOCH_RANGES.items(), start=1):
+        midpoint = (start + end) / 2
+        label = SPLIT_LABELS.get(fold, f"Fold {fold}")
+        axes[0].text(midpoint, acc_y, label, ha="center", va="top", fontsize=11, color="#34495e")
+        axes[1].text(midpoint, loss_y, label, ha="center", va="top", fontsize=11, color="#34495e")
 
     fig.tight_layout()
     fig.savefig(TRAINING_CURVE_FIG, dpi=150)
@@ -299,7 +347,7 @@ def main() -> None:
     full_scaler = StandardScaler().fit(features)
     X_full = full_scaler.transform(features)
     production_model = build_model(len(classes))
-    prod_history = production_model.fit(
+    production_model.fit(
         X_full,
         y,
         epochs=args.epochs,
