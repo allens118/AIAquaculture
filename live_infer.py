@@ -22,11 +22,11 @@ META_PATH = Path("aq_meta.pkl")
 MODEL_PRIORITIES = [Path("aq_dnn.keras"), Path("aq_dnn.h5")]
 
 LEGEND = {
-    "pH_low": "pH Low (pH 太低)",
-    "pH_high": "pH High (pH 太高)",
+    "pH_low": "pH Low (酸鹼值過低)",
+    "pH_high": "pH High (酸鹼值過高)",
     "DO_low": "Dissolved Oxygen Low (溶氧不足)",
     "Temp_high": "Temperature High (水溫過高)",
-    "normal": "Normal (狀態正常)",
+    "normal": "Within Thresholds (各項數值正常)",
 }
 
 TOPIC_SUFFIX_MAP = {
